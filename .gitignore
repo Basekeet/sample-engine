@@ -1,0 +1,9 @@
+*.exe
+*.obj
+*.lib
+*.dll
+*.pdb
+/build/
+x64
+sample-engine/x64
+sample-engine/external
