@@ -1,5 +1,6 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include "stb_image.h"
 #include "shader.h"
 #include "assimp/scene.h"
 #include <assimp/cimport.h>
@@ -40,6 +41,8 @@ class sceneRenderer {
     ui32* VAO;
     ui32* EBO;
 
+    ui32 texture;
+
     Shader* shader;
 public:
     sceneRenderer(const aiScene* scene, Shader* shader) {
@@ -67,39 +70,70 @@ public:
 
         for (size_t i = 0; i < numMeshes; i++) {
             numVertices[i] = scene->mMeshes[i]->mNumVertices;
-            vertices[i] = new float[scene->mMeshes[i]->mNumVertices * 6];
+            vertices[i] = new float[scene->mMeshes[i]->mNumVertices * 8];
             for (size_t j = 0; j < numVertices[i]; j++) {
-                vertices[i][j * 6] = scene->mMeshes[i]->mVertices[j][0];
-                vertices[i][j * 6 + 1] = scene->mMeshes[i]->mVertices[j][1];
-                vertices[i][j * 6 + 2] = scene->mMeshes[i]->mVertices[j][2];
-                vertices[i][j * 6 + 3] = dis(gen);
-                vertices[i][j * 6 + 4] = dis(gen);
-                vertices[i][j * 6 + 5] = dis(gen);
+                vertices[i][j * 8] = scene->mMeshes[i]->mVertices[j][0];
+                vertices[i][j * 8 + 1] = scene->mMeshes[i]->mVertices[j][1];
+                vertices[i][j * 8 + 2] = scene->mMeshes[i]->mVertices[j][2];
+                vertices[i][j * 8 + 3] = 0;
+                vertices[i][j * 8 + 4] = 0;
+                vertices[i][j * 8 + 5] = 0;
+                vertices[i][j * 8 + 6] = scene->mMeshes[i]->mTextureCoords[0][j].x;
+                vertices[i][j * 8 + 7] = scene->mMeshes[i]->mTextureCoords[0][j].y;
             }
 
             numIndices[i] = scene->mMeshes[i]->mNumFaces;
             indices[i] = new unsigned int[numIndices[i] * 3];
             for (size_t j = 0; j < numIndices[i]; j++) {
-                indices[i][j * 3 + 2] = scene->mMeshes[i]->mFaces[j].mIndices[0];
+                indices[i][j * 3 + 0] = scene->mMeshes[i]->mFaces[j].mIndices[0];
                 indices[i][j * 3 + 1] = scene->mMeshes[i]->mFaces[j].mIndices[1];
-                indices[i][j * 3 + 0] = scene->mMeshes[i]->mFaces[j].mIndices[2];
+                indices[i][j * 3 + 2] = scene->mMeshes[i]->mFaces[j].mIndices[2];
             }
 
             glBindVertexArray(VAO[i]);
 
             glBindBuffer(GL_ARRAY_BUFFER, VBO[i]);
-            glBufferData(GL_ARRAY_BUFFER, sizeof(float) * numVertices[i] * 6, vertices[i], GL_STATIC_DRAW);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(float) * numVertices[i] * 8, vertices[i], GL_STATIC_DRAW);
 
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO[i]);
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * numIndices[i] * 3, indices[i], GL_STATIC_DRAW);
 
             // position attribute
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
             glEnableVertexAttribArray(0);
             // color attribute
-            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
             glEnableVertexAttribArray(1);
+
+            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+            glEnableVertexAttribArray(2);
         }
+
+        
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+        int width, height, nrChannels;
+
+        unsigned char* data = stbi_load("C:\\Users\\Uer\\Desktop\\sample-engine\\x64\\Debug\\resources\\barbarian_texture.png", &width, &height, &nrChannels, 0);
+        if (data)
+        {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+        }
+        else
+        {
+            std::cout << "Failed to load texture" << std::endl;
+        }
+        stbi_image_free(data);
+
+        shader->use();
+        shader->setInt("ourTexture", 0);
     }
 
     void drawMeshRec(aiNode* node, glm::mat4 trans) {
@@ -119,7 +153,9 @@ public:
         for (size_t i = 0; i < node->mNumMeshes; i++) {
             
             glUniformMatrix4fv(transformLoc, 1, GL_FALSE, (float*)&trans);
-           
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            shader->use();
             glBindVertexArray(VAO[node->mMeshes[i]]);
             glDrawElements(GL_TRIANGLES, numIndices[node->mMeshes[i]] * 3, GL_UNSIGNED_INT, 0);
         }
@@ -130,12 +166,9 @@ public:
     }
 
     void drawMesh() {
-
         shader->use();
         drawMeshRec(scene->mRootNode, glm::scale(glm::rotate(glm::mat4(1.0f), (float)glfwGetTime() / 10, glm::vec3(0.0f, 1.0f, 0.0f)), glm::vec3(0.5f, 0.5f, 0.5f)));
-        //drawMeshRec(scene->mRootNode, aiMatrix4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0 , 0, 0, 1));
     }
-
 };
 
 int main()
@@ -165,9 +198,10 @@ int main()
 
     Shader ourShader("resources/shader.vs", "resources/shader.fs"); 
 
-    const aiScene* scene = aiImportFile("resources/Barbarian.fbx", aiProcessPreset_TargetRealtime_MaxQuality);
+    const aiScene* scene = aiImportFile("resources/Barbarian.fbx", aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace);
+
     sceneRenderer rendere(scene, &ourShader);
-    //rendere.drawMesh();
+
     glEnable(GL_DEPTH_TEST);
     while (!glfwWindowShouldClose(window))
     {
